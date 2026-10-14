@@ -18,133 +18,29 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Auto-Fix Project Structure & Build APK (Bypassing GitHub Cache)
+      - name: Build APK with Java 17 Toolchain
         run: |
-          set -e
+          # 1. Write gradle.properties without EOF blocks
+          printf "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.nonTransitiveRClass=true\n" > gradle.properties
 
-          # 1. Create gradle.properties
-          cat << 'EOF' > gradle.properties
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.nonTransitiveRClass=true
-          kotlin.code.style=official
-          EOF
+          # 2. Ensure root build.gradle.kts has matched AGP 8.4.2 & Kotlin 1.9.24
+          printf 'plugins {\n    id("com.android.application") version "8.4.2" apply false\n    id("org.jetbrains.kotlin.android") version "1.9.24" apply false\n}\n' > build.gradle.kts
 
-          # 2. Create settings.gradle.kts
-          cat << 'EOF' > settings.gradle.kts
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "OPTCGFoldMeta"
-          include(":app")
-          EOF
-
-          # 3. Create root build.gradle.kts
-          cat << 'EOF' > build.gradle.kts
-          plugins {
-              id("com.android.application") version "8.4.2" apply false
-              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
-          }
-          EOF
-
-          # 4. Verify MainActivity.kt location & check that it wasn't cut off
+          # 3. Ensure MainActivity.kt is in the exact folder
           mkdir -p app/src/main/java/com/optcg/foldmeta
           FOUND_MAIN=$(find . -name "MainActivity.kt" | head -n 1)
-          if [ -z "$FOUND_MAIN" ]; then
-              echo "### ❌ ERROR: MainActivity.kt was not found in your repository!" >> $GITHUB_STEP_SUMMARY
-              exit 1
-          fi
-          if [ "$FOUND_MAIN" != "./app/src/main/java/com/optcg/foldmeta/MainActivity.kt" ]; then
+          if [ -n "$FOUND_MAIN" ] && [ "$FOUND_MAIN" != "./app/src/main/java/com/optcg/foldmeta/MainActivity.kt" ]; then
               cp "$FOUND_MAIN" app/src/main/java/com/optcg/foldmeta/MainActivity.kt
           fi
 
-          # 5. Create clean AndroidManifest.xml
-          mkdir -p app/src/main
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <application
-                  android:allowBackup="true"
-                  android:label="OPTCG Fold 8 Optimizer"
-                  android:supportsRtl="true"
-                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  <property
-                      android:name="android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE"
-                      android:value="true" />
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:resizeableActivity="true"
-                      android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
+          # 4. Strip deprecated package attribute from AndroidManifest.xml if present
+          sed -i 's/package="com.optcg.foldmeta"//g' app/src/main/AndroidManifest.xml
 
-          # 6. Create app/build.gradle.kts
-          cat << 'EOF' > app/build.gradle.kts
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-          }
-
-          android {
-              namespace = "com.optcg.foldmeta"
-              compileSdk = 34
-
-              defaultConfig {
-                  applicationId = "com.optcg.foldmeta"
-                  minSdk = 29
-                  targetSdk = 34
-                  versionCode = 4
-                  versionName = "4.0-CompleteMaster"
-              }
-
-              buildFeatures {
-                  compose = true
-              }
-              composeOptions {
-                  kotlinCompilerExtensionVersion = "1.5.14"
-              }
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-          }
-
-          dependencies {
-              val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
-              implementation(composeBom)
-              implementation("androidx.compose.ui:ui")
-              implementation("androidx.compose.material3:material3")
-              implementation("androidx.compose.material:material-icons-extended")
-              implementation("androidx.compose.material3:material3-window-size-class")
-              implementation("androidx.activity:activity-compose:1.9.0")
-              implementation("androidx.window:window:1.3.0")
-              implementation("io.coil-kt:coil-compose:2.6.0")
-              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-          }
-          EOF
-
-          # 7. Download Gradle 8.7 directly (Bypasses broken GitHub Cache Service!)
+          # 5. Download Gradle 8.7 directly
           wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /tmp/
 
-          # 8. Run Gradle Build and capture exact compiler output to Job Summary if anything fails
+          # 6. Compile Debug APK
           set +e
           /tmp/gradle-8.7/bin/gradle assembleDebug --no-daemon > build_output.log 2>&1
           BUILD_EXIT_CODE=$?
