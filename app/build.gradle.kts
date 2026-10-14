@@ -5,14 +5,23 @@ plugins {
 
 android {
     namespace = "com.optcg.foldmeta"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.optcg.foldmeta"
         minSdk = 29
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 4
         versionName = "4.0-CompleteMaster"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlin {
+        jvmToolchain(17)
     }
 
     buildFeatures {
@@ -27,17 +36,14 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
+    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.material3:material3-window-size-class")
-    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.window:window:1.3.0")
-
-    // Coil for loading & caching official One Piece TCG card images
-    implementation("io.coil-kt:coil-compose:2.7.0")
-    // Coroutines for live tournament JSON feed fetching
+    implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }
