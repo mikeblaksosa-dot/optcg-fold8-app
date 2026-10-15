@@ -18,29 +18,75 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Build APK with Java 17 Toolchain
+      - name: Patch 1x Leader Sim Export & Compile APK
         run: |
-          # 1. Write gradle.properties without EOF blocks
+          # 1. Write gradle.properties
           printf "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8\nandroid.useAndroidX=true\nandroid.nonTransitiveRClass=true\n" > gradle.properties
 
           # 2. Ensure root build.gradle.kts has matched AGP 8.4.2 & Kotlin 1.9.24
           printf 'plugins {\n    id("com.android.application") version "8.4.2" apply false\n    id("org.jetbrains.kotlin.android") version "1.9.24" apply false\n}\n' > build.gradle.kts
 
-          # 3. Ensure MainActivity.kt is in the exact folder
+          # 3. Ensure Kotlin source files are in the exact package directory
           mkdir -p app/src/main/java/com/optcg/foldmeta
           FOUND_MAIN=$(find . -name "MainActivity.kt" | head -n 1)
           if [ -n "$FOUND_MAIN" ] && [ "$FOUND_MAIN" != "./app/src/main/java/com/optcg/foldmeta/MainActivity.kt" ]; then
               cp "$FOUND_MAIN" app/src/main/java/com/optcg/foldmeta/MainActivity.kt
           fi
+          FOUND_DB=$(find . -name "OptcgDatabase.kt" | head -n 1)
+          if [ -n "$FOUND_DB" ] && [ "$FOUND_DB" != "./app/src/main/java/com/optcg/foldmeta/OptcgDatabase.kt" ]; then
+              cp "$FOUND_DB" app/src/main/java/com/optcg/foldmeta/OptcgDatabase.kt
+          fi
 
-          # 4. Strip deprecated package attribute from AndroidManifest.xml if present
-          sed -i 's/package="com.optcg.foldmeta"//g' app/src/main/AndroidManifest.xml
+          # 4. AUTO-PATCH: Prepend 1x{LeaderID} on Sim Copy & ignore Leader ID when parsing 50-card Main Deck
+          python3 - << 'PYEOF'
+          db_path = "app/src/main/java/com/optcg/foldmeta/OptcgDatabase.kt"
+          main_path = "app/src/main/java/com/optcg/foldmeta/MainActivity.kt"
 
-          # 5. Download Gradle 8.7 directly
+          with open(db_path, "r") as f:
+              db_code = f.read()
+
+          # Ensure pasted Sim lists ignore any known Leader ID so the main deck stays at 50/50
+          old_parse = "if (count > 0) consolidated[id] = (consolidated[id] ?: 0) + count"
+          new_parse = "val isLeaderId = leaders.any { it.id == id }\n                if (count > 0 && !isLeaderId) consolidated[id] = (consolidated[id] ?: 0) + count"
+          if "isLeaderId" not in db_code and old_parse in db_code:
+              db_code = db_code.replace(old_parse, new_parse)
+
+          with open(db_path, "w") as f:
+              f.write(db_code)
+
+          with open(main_path, "r") as f:
+              main_code = f.read()
+
+          # Patch Top Meta Decks Copy Button to include 1x{leaderId} at the top
+          old_top_copy = 'ClipData.newPlainText("OPTCG Top Deck", topDeck.simDecklist)'
+          new_top_copy = 'ClipData.newPlainText("OPTCG Top Deck", "1x${topDeck.leaderId}\\n" + topDeck.simDecklist.trim())'
+          main_code = main_code.replace(old_top_copy, new_top_copy)
+
+          # Patch Deck Builder Copy Button to include 1x{leader.id} at the top
+          old_builder_copy = 'ClipData.newPlainText("OPTCG Sim Deck", deckInputText)'
+          new_builder_copy = 'ClipData.newPlainText("OPTCG Sim Deck", "1x${leader.id}\\n" + deckInputText.trim())'
+          main_code = main_code.replace(old_builder_copy, new_builder_copy)
+
+          # Also display the 1x{leader.id} header in the Sim Text toast so user can verify it
+          main_code = main_code.replace('"Copied OPTCG Sim list!"', '"Copied 1x" + leader.id + " + 50 cards for Sim!"')
+          main_code = main_code.replace('"Copied 50-card list!"', '"Copied 1x" + topDeck.leaderId + " + 50 cards for Sim!"')
+
+          with open(main_path, "w") as f:
+              f.write(main_code)
+          PYEOF
+
+          # 5. Generate Straw Hat Jolly Roger Vector App Icon
+          mkdir -p app/src/main/res/drawable
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">\n    <path android:fillColor="#0D0F14" android:pathData="M0,0h108v108h-108z"/>\n    <path android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round" android:pathData="M22,22 L86,86 M86,22 L22,86"/>\n    <path android:fillColor="#FFFFFF" android:pathData="M18,22a6,6 0 1,0 12,0a6,6 0 1,0 -12,0 M78,22a6,6 0 1,0 12,0a6,6 0 1,0 -12,0 M18,86a6,6 0 1,0 12,0a6,6 0 1,0 -12,0 M78,86a6,6 0 1,0 12,0a6,6 0 1,0 -12,0"/>\n    <path android:fillColor="#FFFFFF" android:pathData="M32,52a22,20 0 1,0 44,0a22,20 0 1,0 -44,0"/>\n    <path android:fillColor="#FFFFFF" android:pathData="M43,66h22v14h-22z"/>\n    <path android:fillColor="#F5C542" android:pathData="M32,44 C32,26 76,26 76,44 Z"/>\n    <path android:fillColor="#E53935" android:pathData="M33,40h42v4.5h-42z"/>\n    <path android:fillColor="#F5C542" android:pathData="M18,43h72v5.5h-72z"/>\n    <path android:fillColor="#0D0F14" android:pathData="M40,55a5.5,5.5 0 1,0 11,0a5.5,5.5 0 1,0 -11,0 M57,55a5.5,5.5 0 1,0 11,0a5.5,5.5 0 1,0 -11,0 M52,63l2,-4l2,4z"/>\n    <path android:strokeColor="#0D0F14" android:strokeWidth="2" android:pathData="M43,73h22 M48,68v10 M54,68v10 M60,68v10"/>\n</vector>\n' > app/src/main/res/drawable/ic_jolly_roger.xml
+
+          # 6. Bind the Jolly Roger Icon into AndroidManifest.xml
+          printf '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <application android:allowBackup="true" android:icon="@drawable/ic_jolly_roger" android:roundIcon="@drawable/ic_jolly_roger" android:label="OPTCG Fold 8" android:supportsRtl="true" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">\n        <property android:name="android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE" android:value="true" />\n        <activity android:name=".MainActivity" android:exported="true" android:resizeableActivity="true" android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>\n' > app/src/main/AndroidManifest.xml
+
+          # 7. Download Gradle 8.7 directly
           wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
           unzip -q /tmp/gradle.zip -d /tmp/
 
-          # 6. Compile Debug APK
+          # 8. Compile Debug APK
           set +e
           /tmp/gradle-8.7/bin/gradle assembleDebug --no-daemon > build_output.log 2>&1
           BUILD_EXIT_CODE=$?
@@ -55,7 +101,7 @@ jobs:
               exit $BUILD_EXIT_CODE
           fi
 
-          echo "### ✅ APK Built Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ APK v5.1 (With 1x Leader Sim Export) Built Successfully!" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload Ready-to-Install APK
         uses: actions/upload-artifact@v4
